@@ -80,16 +80,19 @@ The following Apache configuration directives are supported:
 	LessAlwaysRecompile On
 	LessRelativeUrls On
 	LessCompress Off
+	LessMapFile On
 	</IfModule>
 
 * LessAlwaysRecompile - do not rely on file mtime & always run less compilation
 * LessRelativeUrls - pass the --relative-urls flat to the lessc compiler
 * LessCompress - pass the --compress flag to the lessc compiler
+* LessMapFile - pass the --source-map and the --source-map-inline flag to the lessc compiler
 
 # Developers:
 
 - waleed al qadi (waleedq)  
 - rewrite by MaZderMind (github@mazdermind.de).  
 - bug fix / misc changes by Chris Williams ([PureForm](https://github.com/PureForm)).
+- map-file generation by Opeey ([Opeey](https://github.com/Opeey)).
 
 note: feel free to fork and contrib to this project or to drop us a mail
