@@ -35,6 +35,7 @@ typedef struct {
 	int compress;
 	int always_recompile;
 	int relative_urls;
+	int map_file;
 } mod_less_cfg;
 
 // forward delcaration
@@ -58,10 +59,17 @@ static const char * toggle_less_compression(cmd_parms * parms, void *mconfig, in
 	return NULL;
 }
 
+static const char * toggle_map_file(cmd_parms * parms, void *mconfig, int flag) {
+	mod_less_cfg * cfg = ap_get_module_config(parms->server->module_config, &less_module);
+	cfg->map_file = flag;
+	return NULL;
+}
+
 static const command_rec mod_less_commands[] = {
 	AP_INIT_FLAG("LessAlwaysRecompile", toggle_always_recompile, NULL, OR_ALL, "Always recompile less files or rely on file mtime."),
 	AP_INIT_FLAG("LessRelativeUrls", toggle_relative_urls, NULL, OR_ALL, "Compile less files with the --relative-urls flag."),
 	AP_INIT_FLAG("LessCompress", toggle_less_compression, NULL, OR_ALL, "Compile less files with the --compress flag."),
+	AP_INIT_FLAG("LessMapFile", toggle_map_file, NULL, OR_ALL, "Create map file for created css files."),
 	{ NULL }
 };
 
@@ -146,6 +154,7 @@ static int less_handler(request_rec* r) {
 	char *cssfile;
 	char *lessfile;
 	char *tmpfile;
+	char *mapfile;
 	if(asprintf(&lessfile, "%s.less", basename) == -1) {
 		free(basename);
 		ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r, "asprintf failed while formatting the less filename");
@@ -162,6 +171,22 @@ static int less_handler(request_rec* r) {
 		free(lessfile);
 		free(cssfile);
 		ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r, "asprintf failed while formatting the tmp filename");
+		return HTTP_INTERNAL_SERVER_ERROR;
+	}
+	// get the filename without full path
+	char *filename = strrchr(basename, '/');
+
+	// if no slash is found, we already have a relative path
+	if(filename == NULL) {
+		filename = basename;
+	}
+
+	if(asprintf(&mapfile, "%s.map", filename) == -1) {
+		free(basename);
+		free(lessfile);
+		free(cssfile);
+		free(mapfile);
+		ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r, "asprintf failed while formatting the map filename");
 		return HTTP_INTERNAL_SERVER_ERROR;
 	}
 	free(basename);
@@ -205,7 +230,10 @@ static int less_handler(request_rec* r) {
 
 	const char * relative_urls_flag = "--relative-urls";
 	const char * compress_flag = "--compress";
-	const int max_len = 50;
+	const char * map_file_source_map_flag = "--source-map=";
+	const char * map_file_inline_flag = "--source-map-less-inline";
+
+	const int max_len = 130;
 	char lessc_flags[max_len];
 	int offset = 0;
 	int to_write = 0;
@@ -219,6 +247,18 @@ static int less_handler(request_rec* r) {
 		int written = snprintf(lessc_flags + offset, to_write, "%s ", compress_flag);
 		offset += written;
 	}
+	if (cfg->map_file == 1) {
+		const int max_map_len = 80;
+		char map_file_flag[max_map_len];
+		(void)sprintf(map_file_flag, "%s%s %s", map_file_source_map_flag, mapfile, map_file_inline_flag);
+
+		int to_write = max_len - offset;
+		int written = snprintf(lessc_flags + offset, to_write, "%s ", map_file_flag);
+		offset += written;
+	}
+
+	// free mapfile, we don't need it anymore
+	free(mapfile);
 
 	// either there is no css file or it is too old - either way we need to recompile it
 	ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r, "Compiling CSS File %s from LESS File %s via TMP File %s with flags %s", cssfile, lessfile, tmpfile, lessc_flags);
@@ -344,6 +384,7 @@ static void *create_mod_less_config(apr_pool_t* pool, server_rec* srv) {
 	cfg->compress = 0;
 	cfg->always_recompile = 1;
 	cfg->relative_urls = 1;
+	cfg->map_file = 1;
 
 	return (void *) cfg;
 }
@@ -356,6 +397,7 @@ static void *merge_server_config(apr_pool_t* pool, void* basev, void* addv) {
 	mrg->compress = add->compress;
 	mrg->always_recompile = add->always_recompile;
 	mrg->relative_urls = add->relative_urls;
+	mrg->map_file = add->map_file;
 	return (void *)mrg;
 }
 
