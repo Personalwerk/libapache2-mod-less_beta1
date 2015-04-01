@@ -28,9 +28,11 @@
 
 #include <stdio.h>
 #include <string>
-#include <stdexcept> 
+#include <stdexcept>
+#include <fstream>
 
 #define MAX_ERROR_SIZE 2*1024
+#define MAX_INPUT_SIZE 1024
 
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(less);
@@ -40,6 +42,7 @@ typedef struct {
 	int compress;
 	int always_recompile;
 	int relative_urls;
+	int recompile;
 } mod_less_cfg;
 
 // forward declarations
@@ -47,6 +50,7 @@ static void *create_mod_less_config(apr_pool_t* pool, server_rec* srv);
 static void *merge_server_config(apr_pool_t* pool, void* basev, void* addv);
 
 static const char * toggle_always_recompile(cmd_parms * parms, void *mconfig, int flag);
+static const char * take_recompile(cmd_parms * parms, void *mconfig, const char *arg);
 static const char * toggle_relative_urls(cmd_parms * parms, void *mconfig, int flag);
 static const char * toggle_less_compression(cmd_parms * parms, void *mconfig, int flag);
 
@@ -54,6 +58,7 @@ static const command_rec mod_less_commands[] = {
 	AP_INIT_FLAG("LessAlwaysRecompile", (cmd_func)toggle_always_recompile, NULL, OR_ALL, "Always recompile less files or rely on file mtime."),
 	AP_INIT_FLAG("LessRelativeUrls", (cmd_func)toggle_relative_urls, NULL, OR_ALL, "Compile less files with the --relative-urls flag."),
 	AP_INIT_FLAG("LessCompress", (cmd_func)toggle_less_compression, NULL, OR_ALL, "Compile less files with the --compress flag."),
+	AP_INIT_TAKE1("LessRecompile", (cmd_func)take_recompile, NULL, OR_ALL, "Recompile less files, always, mtime or auto"),
 	{ NULL }
 };
 
@@ -72,6 +77,17 @@ module AP_MODULE_DECLARE_DATA less_module = {
 static const char * toggle_always_recompile(cmd_parms * parms, void *mconfig, int flag) {
 	mod_less_cfg * cfg = (mod_less_cfg *)ap_get_module_config(parms->server->module_config, &less_module);
 	cfg->always_recompile = flag;
+	return NULL;
+}
+
+static const char * take_recompile(cmd_parms * parms, void *mconfig, const char *arg) {
+	mod_less_cfg * cfg = (mod_less_cfg *)ap_get_module_config(parms->server->module_config, &less_module);
+	if (strcmp(arg, "Always") == 0)
+		cfg->recompile = 1;
+	else if (strcmp(arg, "Auto"))
+		cfg->recompile = 0;
+	else
+		cfg->recompile = -1;
 	return NULL;
 }
 
@@ -156,10 +172,12 @@ static int less_handler(request_rec* r) {
 		std::string cssfile(basename);
 		std::string lessfile(basename);
 		std::string tmpfile(basename);
+		std::string depfile(basename);
 
 		cssfile.append(".css");
 		lessfile.append(".less");
 		tmpfile.append(".css.tmpXXXXXX");
+		depfile.append(".dep");
 
 
 		apr_finfo_t lessinfo;
@@ -181,7 +199,7 @@ static int less_handler(request_rec* r) {
 		// stat them both and see if the css file is recent enough to satisfy the request
 		if(apr_stat(&cssinfo, cssfile.c_str(), APR_FINFO_MTIME | APR_FINFO_SIZE, r->pool) == APR_SUCCESS) {
 			// check, if the css-file is up-to-date
-			if(cfg->always_recompile != 1 && cssinfo.mtime > lessinfo.mtime) {
+			if (cfg->recompile < 0 && cssinfo.mtime > lessinfo.mtime) {
 
 				// send the css-file
 				if(!send_css_file(cssfile.c_str(), cssinfo.size, r)) {
@@ -190,6 +208,46 @@ static int less_handler(request_rec* r) {
 
 				// and we're done here
 				return OK;
+			}
+			// check, if css-file is up-to-date and auto recompile is active
+			if (cfg->recompile == 0 && cssinfo.mtime > lessinfo.mtime) {
+
+				bool recompile = false;
+				std::ifstream ifs (depfile.c_str(), std::ifstream::in);
+
+				if (!ifs.fail()) {
+					while (!ifs.eof()) {
+						std::string ifsfilename;
+						std::getline (ifs, ifsfilename, ' ');	
+
+						// Check if ifsfilename ends with ':', this is the first output in the .dep file and can be ignored
+						if (ifsfilename.compare(ifsfilename.length()-1, 1, ":") == 0)
+							continue;
+						
+						apr_finfo_t depinfo;
+						
+						// If a file in the dep-file doesn't exist, break - we should better recompile
+						if (apr_stat(&depinfo, ifsfilename.c_str(), APR_FINFO_MTIME, r->pool) != APR_SUCCESS)
+							recompile = true;
+							break;
+
+						// If a file in the dep-file is newer than the css - we should recompile
+						if (depinfo.mtime < cssinfo.mtime)
+							recompile = true;
+							break;
+					}
+				}
+
+				if (!recompile) {
+
+					// send the css-file
+					if(!send_css_file(cssfile.c_str(), cssinfo.size, r)) {
+						return HTTP_INTERNAL_SERVER_ERROR;
+					}
+
+					// and we're done here
+					return OK;
+				}
 			}
 		}
 
@@ -273,6 +331,21 @@ static int less_handler(request_rec* r) {
 			return HTTP_INTERNAL_SERVER_ERROR;
 		}
 
+		// Create dep file
+		if (cfg->recompile == 0) {
+			std::string depcmd("lessc --no-color --silent --depends ");
+			if (cfg->relative_urls == 1) {
+				depcmd.append("--relative-urls ");
+			}
+			depcmd.append(lessfile)
+				.append("/dev/null");
+
+			ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r, "Compiling DEP File %s from LESS File %s with cmd %s", depfile.c_str(), lessfile.c_str(), depcmd.c_str());
+
+			FILE* ppdep = popen(depcmd.c_str(), "r");
+			pclose(ppdep);
+		}
+
 		// re-stat the css file to get the new size
 		status = apr_stat(&cssinfo, cssfile.c_str(), APR_FINFO_SIZE, r->pool);
 		if(status != APR_SUCCESS) {
@@ -312,6 +385,7 @@ static void *create_mod_less_config(apr_pool_t* pool, server_rec* srv) {
 	cfg->compress = 0;
 	cfg->always_recompile = 1;
 	cfg->relative_urls = 1;
+	cfg->recompile = -1;
 
 	return (void *) cfg;
 }
@@ -324,6 +398,7 @@ static void *merge_server_config(apr_pool_t* pool, void* basev, void* addv) {
 	mrg->compress = add->compress;
 	mrg->always_recompile = add->always_recompile;
 	mrg->relative_urls = add->relative_urls;
+	mrg->recompile = add->recompile;
 	return (void *)mrg;
 }
 
