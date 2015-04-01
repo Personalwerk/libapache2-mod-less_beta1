@@ -64,11 +64,12 @@ to compile it you will need the apxs2 tool which can be found in the apache2-pre
 
 	sudo apt-get install apache2-prefork-dev
 
-after installing apxs2 tool, cd to the src directory and execute this command 
+after installing apxs2 tool, cd to the root directory and execute Makefile
 
-	sudo apxs2 -c -i mod_less.c
+	make all
+	make install
 
-compiled file "mod_less.so" will be automatically copied to /usr/lib/apache2/modules/mod_less.so and chmoded.
+compiled file "mod_less.so" will be copied to /usr/lib/apache2/modules/mod_less.so and chmoded by make install.
 you only need to add the less.load and less.conf as mentioned in the Installation section above.
 
 
@@ -93,6 +94,6 @@ The following Apache configuration directives are supported:
 - waleed al qadi (waleedq)  
 - rewrite by MaZderMind (github@mazdermind.de).  
 - bug fix / misc changes by Chris Williams ([PureForm](https://github.com/PureForm)).
-- map-file generation by Opeey ([Opeey](https://github.com/Opeey)).
+- rewrite to C++ / map-file generation by Opeey ([Opeey](https://github.com/Opeey))
 
 note: feel free to fork and contrib to this project or to drop us a mail
