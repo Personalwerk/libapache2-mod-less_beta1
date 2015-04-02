@@ -31,4 +31,5 @@ install: all
 	apachectl restart
  
 clean:
-	@rm -f $(MODULE) src/*.o src/*.lo src/*.slo *.o src/gpb/*o
+	rm -f $(MODULE) rc/*.o src/*.lo src/*.slo *.o src/gpb/*o
+	rm -rf src/.libs
