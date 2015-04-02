@@ -3,16 +3,9 @@
 
 # apxs is hardcoded to only compile *.c files so C++ files must be named foo.c or symlinked to foo.c -- What a pain in the ass.
 
-OS=$(shell if grep -q Ubuntu /etc/*release; then echo Ubuntu; fi)
-ifeq ($(OS), Ubuntu)
 BUILD_BASE=/usr/share/apache2
 TOPDIR=$(BUILD_BASE)
 APXS=apxs2
-else
-BUILD_BASE=/usr/lib/httpd
-TOPDIR=/etc/httpd
-APXS=apxs
-endif
  
 builddir=.
 top_srcdir=$(TOPDIR)
@@ -38,4 +31,5 @@ install: all
 	apachectl restart
  
 clean:
-	@rm -f $(MODULE) src/*.o src/*.lo src/*.slo *.o src/gpb/*o
+	rm -f $(MODULE) rc/*.o src/*.lo src/*.slo *.o src/gpb/*o
+	rm -rf src/.libs
