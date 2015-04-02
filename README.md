@@ -92,6 +92,6 @@ The following Apache configuration directives are supported:
 - waleed al qadi (waleedq)  
 - rewrite by MaZderMind (github@mazdermind.de).  
 - bug fix / misc changes by Chris Williams ([PureForm](https://github.com/PureForm)).
-- rewrite to C++ by Opeey ([Opeey](https://github.com/Opeey))
+- rewrite to C++ / auto recompile by Opeey ([Opeey](https://github.com/Opeey))
 
 note: feel free to fork and contrib to this project or to drop us a mail
