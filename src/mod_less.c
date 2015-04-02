@@ -211,8 +211,8 @@ static int less_handler(request_rec* r) {
 			lessc_flags.append(" --compress");
 		}
 		if (cfg->map_inline == 1) {
-			lessc_flags.append(" --source-map-less-inline")
-				.append(" --source-map-map-inline");
+			lessc_flags.append(" --source-map")
+				.append(" --source-map-less-inline");
 		}
 		lessc_flags.append(" ");
 
