@@ -42,6 +42,7 @@ typedef struct {
 	int compress;
 	int relative_urls;
 	int recompile;
+	int map_file;
 } mod_less_cfg;
 
 // forward declarations
@@ -51,11 +52,13 @@ static void *merge_server_config(apr_pool_t* pool, void* basev, void* addv);
 static const char * take_recompile(cmd_parms * parms, void *mconfig, const char *arg);
 static const char * toggle_relative_urls(cmd_parms * parms, void *mconfig, int flag);
 static const char * toggle_less_compression(cmd_parms * parms, void *mconfig, int flag);
+static const char * toggle_map_file(cmd_parms * parms, void *mconfig, int flag);
 
 static const command_rec mod_less_commands[] = {
 	AP_INIT_FLAG("LessRelativeUrls", (cmd_func)toggle_relative_urls, NULL, OR_ALL, "Compile less files with the --relative-urls flag."),
 	AP_INIT_FLAG("LessCompress", (cmd_func)toggle_less_compression, NULL, OR_ALL, "Compile less files with the --compress flag."),
 	AP_INIT_TAKE1("LessRecompile", (cmd_func)take_recompile, NULL, OR_ALL, "Recompile less files, Always, Mtime or Auto"),
+	AP_INIT_FLAG("LessMapFile", (cmd_func)toggle_map_file, NULL, OR_ALL, "Compile less files with --source-map-less-inline and --source-map-map-inline."),
 	{ NULL }
 };
 
@@ -91,6 +94,12 @@ static const char * toggle_relative_urls(cmd_parms * parms, void *mconfig, int f
 static const char * toggle_less_compression(cmd_parms * parms, void *mconfig, int flag) {
 	mod_less_cfg * cfg = (mod_less_cfg *)ap_get_module_config(parms->server->module_config, &less_module);
 	cfg->compress = flag;
+	return NULL;
+}
+
+static const char * toggle_map_file(cmd_parms * parms, void *mconfig, int flag) {
+	mod_less_cfg * cfg = (mod_less_cfg *)ap_get_module_config(parms->server->module_config, &less_module);
+	cfg->map_file = flag;
 	return NULL;
 }
 
@@ -158,7 +167,6 @@ static int less_handler(request_rec* r) {
 		std::string filename(r->filename);
 
 		std::string basename = filename.substr(0, filename.find_last_of("."));
-
 
 		std::string cssfile(basename);
 		std::string lessfile(basename);
@@ -264,6 +272,10 @@ static int less_handler(request_rec* r) {
 		}
 		if (cfg->recompile == 0) {
 			lessc_flags.append(" --depends");
+		}
+		if (cfg->map_file == 1) {
+			lessc_flags.append(" --source-map")
+				.append(" --source-map-less-inline");
 		}
 		lessc_flags.append(" ");
 		
@@ -442,6 +454,7 @@ static void *create_mod_less_config(apr_pool_t* pool, server_rec* srv) {
 	cfg->compress = 0;
 	cfg->relative_urls = 1;
 	cfg->recompile = -1;
+	cfg->map_file = 1;
 
 	return (void *) cfg;
 }
@@ -454,6 +467,7 @@ static void *merge_server_config(apr_pool_t* pool, void* basev, void* addv) {
 	mrg->compress = add->compress;
 	mrg->relative_urls = add->relative_urls;
 	mrg->recompile = add->recompile;
+	mrg->map_file = add->map_file;
 	return (void *)mrg;
 }
 
