@@ -40,7 +40,6 @@ APLOG_USE_MODULE(less);
 
 typedef struct {
 	int compress;
-	int always_recompile;
 	int relative_urls;
 	int recompile;
 } mod_less_cfg;
@@ -49,16 +48,14 @@ typedef struct {
 static void *create_mod_less_config(apr_pool_t* pool, server_rec* srv);
 static void *merge_server_config(apr_pool_t* pool, void* basev, void* addv);
 
-static const char * toggle_always_recompile(cmd_parms * parms, void *mconfig, int flag);
 static const char * take_recompile(cmd_parms * parms, void *mconfig, const char *arg);
 static const char * toggle_relative_urls(cmd_parms * parms, void *mconfig, int flag);
 static const char * toggle_less_compression(cmd_parms * parms, void *mconfig, int flag);
 
 static const command_rec mod_less_commands[] = {
-	AP_INIT_FLAG("LessAlwaysRecompile", (cmd_func)toggle_always_recompile, NULL, OR_ALL, "Always recompile less files or rely on file mtime."),
 	AP_INIT_FLAG("LessRelativeUrls", (cmd_func)toggle_relative_urls, NULL, OR_ALL, "Compile less files with the --relative-urls flag."),
 	AP_INIT_FLAG("LessCompress", (cmd_func)toggle_less_compression, NULL, OR_ALL, "Compile less files with the --compress flag."),
-	AP_INIT_TAKE1("LessRecompile", (cmd_func)take_recompile, NULL, OR_ALL, "Recompile less files, always, mtime or auto"),
+	AP_INIT_TAKE1("LessRecompile", (cmd_func)take_recompile, NULL, OR_ALL, "Recompile less files, Always, Mtime or Auto"),
 	{ NULL }
 };
 
@@ -74,17 +71,11 @@ module AP_MODULE_DECLARE_DATA less_module = {
 	register_hooks
 };
 
-static const char * toggle_always_recompile(cmd_parms * parms, void *mconfig, int flag) {
-	mod_less_cfg * cfg = (mod_less_cfg *)ap_get_module_config(parms->server->module_config, &less_module);
-	cfg->always_recompile = flag;
-	return NULL;
-}
-
 static const char * take_recompile(cmd_parms * parms, void *mconfig, const char *arg) {
 	mod_less_cfg * cfg = (mod_less_cfg *)ap_get_module_config(parms->server->module_config, &less_module);
 	if (strcmp(arg, "Always") == 0)
 		cfg->recompile = 1;
-	else if (strcmp(arg, "Auto"))
+	else if (strcmp(arg, "Auto") == 0)
 		cfg->recompile = 0;
 	else
 		cfg->recompile = -1;
@@ -171,13 +162,17 @@ static int less_handler(request_rec* r) {
 
 		std::string cssfile(basename);
 		std::string lessfile(basename);
-		std::string tmpfile(basename);
 		std::string depfile(basename);
+		std::string csstmpfile(basename);
+		std::string deptmpfile(basename);
+		std::string errtmpfile(basename);
 
 		cssfile.append(".css");
 		lessfile.append(".less");
-		tmpfile.append(".css.tmpXXXXXX");
 		depfile.append(".dep");
+		csstmpfile.append(".css.tmpXXXXXX");
+		deptmpfile.append(".dep.tmpXXXXXX");
+		errtmpfile.append(".err.tmpXXXXXX");
 
 
 		apr_finfo_t lessinfo;
@@ -221,21 +216,28 @@ static int less_handler(request_rec* r) {
 						std::getline (ifs, ifsfilename, ' ');	
 
 						// Check if ifsfilename ends with ':', this is the first output in the .dep file and can be ignored
-						if (ifsfilename.compare(ifsfilename.length()-1, 1, ":") == 0)
+						if ((ifsfilename.compare(ifsfilename.length()-1, 1, ":") == 0) || (ifsfilename.compare("\n") == 0))
 							continue;
 						
 						apr_finfo_t depinfo;
 						
 						// If a file in the dep-file doesn't exist, break - we should better recompile
-						if (apr_stat(&depinfo, ifsfilename.c_str(), APR_FINFO_MTIME, r->pool) != APR_SUCCESS)
+						if (apr_stat(&depinfo, ifsfilename.c_str(), APR_FINFO_MTIME, r->pool) != APR_SUCCESS) {
 							recompile = true;
+							ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r, "Couldn't stat %s - recompiling.", ifsfilename.c_str());
 							break;
+						}
 
 						// If a file in the dep-file is newer than the css - we should recompile
-						if (depinfo.mtime < cssinfo.mtime)
+						if (depinfo.mtime > cssinfo.mtime) {
 							recompile = true;
+							ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r, "File: %s is newer than css file - recompiling", ifsfilename.c_str());
 							break;
+						}
 					}
+				} else {
+					ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r, "No dependency file found (%s) - recompiling", depfile.c_str());
+					recompile = true;
 				}
 
 				if (!recompile) {
@@ -260,22 +262,43 @@ static int less_handler(request_rec* r) {
 		if (cfg->compress == 1) {
 			lessc_flags.append(" --compress");
 		}
+		if (cfg->recompile == 0) {
+			lessc_flags.append(" --depends");
+		}
 		lessc_flags.append(" ");
-
+		
 		// either there is no css file or it is too old - either way we need to recompile it
-		ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r, "Compiling CSS File %s from LESS File %s via TMP File %s with flags %s", cssfile.c_str(), lessfile.c_str(), tmpfile.c_str(), lessc_flags.c_str());
-
-		char unique_tmpfile[tmpfile.length()];
-		strcpy(unique_tmpfile, tmpfile.c_str());
+		ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r, "Compiling CSS File %s from LESS File %s via TMP File %s with flags %s", cssfile.c_str(), lessfile.c_str(), csstmpfile.c_str(), lessc_flags.c_str());
 
 		// create the temp file
-		apr_file_t *tmpfd;
-		status = apr_file_mktemp(&tmpfd, unique_tmpfile, APR_CREATE | APR_READ | APR_WRITE | APR_EXCL, r->pool);
+		apr_file_t *csstmpfd;
+		status = apr_file_mktemp(&csstmpfd, const_cast<char*>(csstmpfile.c_str()), APR_CREATE | APR_READ | APR_WRITE | APR_EXCL, r->pool);
 		if(status != APR_SUCCESS) {
-			ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_mktemp failed while creating the temp file: %s", tmpfile.c_str());
+			ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_mktemp failed while creating the temp file: %s", csstmpfile.c_str());
 
 			return HTTP_INTERNAL_SERVER_ERROR;
 		}
+
+		// create the temp file
+		apr_file_t *errtmpfd;
+		status = apr_file_mktemp(&errtmpfd, const_cast<char*>(errtmpfile.c_str()), APR_CREATE | APR_READ | APR_WRITE | APR_EXCL, r->pool);
+		if(status != APR_SUCCESS) {
+			ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_mktemp failed while creating the temp file: %s", errtmpfile.c_str());
+
+			return HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		apr_file_t *deptmpfd;
+		if (cfg->recompile == 0) {
+			// create the temp file
+			status = apr_file_mktemp(&deptmpfd, const_cast<char*>(deptmpfile.c_str()), APR_CREATE | APR_READ | APR_WRITE | APR_EXCL, r->pool);
+			if(status != APR_SUCCESS) {
+				ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_mktemp failed while creating the temp file: %s", deptmpfile.c_str());
+
+				return HTTP_INTERNAL_SERVER_ERROR;
+			}		
+		}
+
 
 		// TODO: place to config
 		//  placing the STDERR redirection before the STDOUT redirection gives us a
@@ -284,66 +307,100 @@ static int less_handler(request_rec* r) {
 		std::string cmd("lessc --no-color");
 		cmd.append(lessc_flags)
 			.append(lessfile)
-			.append(" 2>&1 >")
-			.append(unique_tmpfile);
+			.append(" ")
+			.append(csstmpfile.c_str())
+			.append(" 2>")
+			.append(errtmpfile.c_str())
+			.append(" >");
+		if (cfg->recompile == 0) {
+			cmd.append(deptmpfile.c_str());
+		} else {
+			cmd.append("/dev/null");
+		}
 
 		// execute lessc
-		//  this pipes the generated css code into the tmpfile and the error into our popen pipe
-		//  if the command succeeds, we'll move the tmpfile over the original css file,
-		//  when lessc reports an error the tmpfile is meaningless and gets deleted
-		//  TODO: error check
-		char err[MAX_ERROR_SIZE];
-		FILE* pp = popen(cmd.c_str(), "r");
-		size_t bytes_read = fread(&err, 1, MAX_ERROR_SIZE-1, pp);
-		err[bytes_read] = '\0';
-		int ret = pclose(pp);
+		//  if the command succeeds, we'll move the csstmpfile over the original css file,
+		//  and - if the option is set - the deptmpfile over the dep file
+		//  when lessc reports an error the errtmpfile is moved over the original css file
+		int ret = system(cmd.c_str());
 
 		// check if lessc returned an error
 		if(ret != 0) {
 			ap_set_content_type(r, "text/plain");
-			ap_rputs(err, r);
 
-			ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r, "lessc command '%s' returned %i, reporting '%s'", cmd.c_str(), ret, err);
+			ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r, "lessc command '%s' returned %i", cmd.c_str(), ret);
 
-			// close and delete the tmpfile
-			if(!close_and_delete(tmpfd, unique_tmpfile, r))
+			// close and delete the csstmpfile
+			if(!close_and_delete(csstmpfd, csstmpfile.c_str(), r))
 				return HTTP_INTERNAL_SERVER_ERROR;
+
+			if (cfg->recompile == 0) {
+				// close and delete the deptmpfile
+				if(!close_and_delete(deptmpfd, deptmpfile.c_str(), r))
+					return HTTP_INTERNAL_SERVER_ERROR;
+			}
+
+			// close the filepointer pointing to the errtmpfile
+			// this removes the EXCL lock on the file
+			status = apr_file_close(errtmpfd);
+			if(status != APR_SUCCESS) {
+				ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_close failed while closing %s", errtmpfile.c_str());
+
+				return HTTP_INTERNAL_SERVER_ERROR;
+			}
+
+			// move the errtmpfile over the cssfile
+			status = apr_file_rename(errtmpfile.c_str(), cssfile.c_str(), r->pool);
+			if(status != APR_SUCCESS) {
+				ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_rename failed while moving the err tmpfile %s over the cssfile %s", errtmpfile.c_str(), cssfile.c_str());
+
+				return HTTP_INTERNAL_SERVER_ERROR;
+			}
+		
 
 			// I would like to send a HTTP_INTERNAL_SERVER_ERROR but apache ignores
 			// the sent error text and instead displays its own
 			return OK;
 		}
 
-		// close the filepointer pointing to the tmpfile
+		// close and delete the errtmpfile
+		if(!close_and_delete(errtmpfd, errtmpfile.c_str(), r))
+			return HTTP_INTERNAL_SERVER_ERROR;
+
+		// close the filepointer pointing to the csstmpfile
 		// this removes the EXCL lock on the file
-		status = apr_file_close(tmpfd);
+		status = apr_file_close(csstmpfd);
 		if(status != APR_SUCCESS) {
-			ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_close failed while closing %s", tmpfile.c_str());
+			ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_close failed while closing %s", csstmpfile.c_str());
 
 			return HTTP_INTERNAL_SERVER_ERROR;
 		}
 
-		// move the tmpfile over the cssfile
-		status = apr_file_rename(unique_tmpfile, cssfile.c_str(), r->pool);
+		// move the csstmpfile over the cssfile
+		status = apr_file_rename(csstmpfile.c_str(), cssfile.c_str(), r->pool);
 		if(status != APR_SUCCESS) {
-			ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_rename failed while moving the tmpfile %s over the cssfile %s", unique_tmpfile, cssfile.c_str());
+			ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_rename failed while moving the css tmpfile %s over the cssfile %s", csstmpfile.c_str(), cssfile.c_str());
 
 			return HTTP_INTERNAL_SERVER_ERROR;
 		}
 
-		// Create dep file
 		if (cfg->recompile == 0) {
-			std::string depcmd("lessc --no-color --silent --depends ");
-			if (cfg->relative_urls == 1) {
-				depcmd.append("--relative-urls ");
+			// close the filepointer pointing to the deptmpfile
+			// this removes the EXCL lock on the file
+			status = apr_file_close(deptmpfd);
+			if(status != APR_SUCCESS) {
+				ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_close failed while closing %s", deptmpfile.c_str());
+
+				return HTTP_INTERNAL_SERVER_ERROR;
 			}
-			depcmd.append(lessfile)
-				.append("/dev/null");
 
-			ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r, "Compiling DEP File %s from LESS File %s with cmd %s", depfile.c_str(), lessfile.c_str(), depcmd.c_str());
+			// move the deptmpfile over the depfile
+			status = apr_file_rename(deptmpfile.c_str(), depfile.c_str(), r->pool);
+			if(status != APR_SUCCESS) {
+				ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_rename failed while moving the dep tmpfile %s over the depfile %s", deptmpfile.c_str(), depfile.c_str());
 
-			FILE* ppdep = popen(depcmd.c_str(), "r");
-			pclose(ppdep);
+				return HTTP_INTERNAL_SERVER_ERROR;
+			}
 		}
 
 		// re-stat the css file to get the new size
@@ -383,7 +440,6 @@ static void *create_mod_less_config(apr_pool_t* pool, server_rec* srv) {
 	cfg = (mod_less_cfg*) apr_pcalloc(pool, sizeof(mod_less_cfg));
 
 	cfg->compress = 0;
-	cfg->always_recompile = 1;
 	cfg->relative_urls = 1;
 	cfg->recompile = -1;
 
@@ -396,7 +452,6 @@ static void *merge_server_config(apr_pool_t* pool, void* basev, void* addv) {
 	mod_less_cfg *mrg = (mod_less_cfg *)apr_pcalloc(pool, sizeof(mod_less_cfg));
 
 	mrg->compress = add->compress;
-	mrg->always_recompile = add->always_recompile;
 	mrg->relative_urls = add->relative_urls;
 	mrg->recompile = add->recompile;
 	return (void *)mrg;
