@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/Opeey/libapache2-mod-less_beta1.svg?branch=master)](https://travis-ci.org/Opeey/libapache2-mod-less_beta1)
+[![Build Status](https://travis-ci.org/Personalwerk/libapache2-mod-less_beta1.svg?branch=master)](https://travis-ci.org/Personalwerk/libapache2-mod-less_beta1)
 
 # mod_less: automatic less compiling in apache2:
 
