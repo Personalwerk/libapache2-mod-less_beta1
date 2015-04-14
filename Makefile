@@ -15,7 +15,7 @@ top_builddir=$(TOPDIR)
 MODULE = src/mod_less.la
 SOURCES = src/mod_less.c
 
-CC_FLAGS=$(shell apxs -q CFLAGS) $(shell apr-1-config --cppflags) -I./src -I/usr/include/httpd 
+CC_FLAGS=$(shell apxs2 -q CFLAGS) $(shell apr-1-config --cppflags) -I./src -I/usr/include/httpd 
 LD_FLAGS=-Wall$(shell pkg-config) $(shell apr-1-config --libs) -lstdc++
  
 all: $(MODULE)
