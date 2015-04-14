@@ -364,6 +364,14 @@ static int less_handler(request_rec* r) {
 				return HTTP_INTERNAL_SERVER_ERROR;
 			}
 
+			// set permissions on the errtmpfile
+			status = apr_file_perms_set(errtmpfile.c_str(), APR_UREAD | APR_UWRITE | APR_GREAD | APR_WREAD);
+			if(status != APR_SUCCESS) {
+				ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_perms_set failed while setting the permission on the tmpfile %s", errtmpfile.c_str());
+
+				return HTTP_INTERNAL_SERVER_ERROR;
+			}
+
 			// move the errtmpfile over the cssfile
 			status = apr_file_rename(errtmpfile.c_str(), cssfile.c_str(), r->pool);
 			if(status != APR_SUCCESS) {
@@ -391,6 +399,14 @@ static int less_handler(request_rec* r) {
 			return HTTP_INTERNAL_SERVER_ERROR;
 		}
 
+		// set permissions on the csstmpfile
+		status = apr_file_perms_set(csstmpfile.c_str(), APR_UREAD | APR_UWRITE | APR_GREAD | APR_WREAD);
+		if(status != APR_SUCCESS) {
+			ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_perms_set failed while setting the permission on the tmpfile %s", csstmpfile.c_str());
+
+			return HTTP_INTERNAL_SERVER_ERROR;
+		}
+
 		// move the csstmpfile over the cssfile
 		status = apr_file_rename(csstmpfile.c_str(), cssfile.c_str(), r->pool);
 		if(status != APR_SUCCESS) {
@@ -405,6 +421,14 @@ static int less_handler(request_rec* r) {
 			status = apr_file_close(deptmpfd);
 			if(status != APR_SUCCESS) {
 				ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_close failed while closing %s", deptmpfile.c_str());
+
+				return HTTP_INTERNAL_SERVER_ERROR;
+			}
+
+			// set permissions on the deptmpfile
+			status = apr_file_perms_set(deptmpfile.c_str(), APR_UREAD | APR_UWRITE | APR_GREAD | APR_WREAD);
+			if(status != APR_SUCCESS) {
+				ap_log_rerror(APLOG_MARK, APLOG_CRIT, status, r, "apr_file_perms_set failed while setting the permission on the tmpfile %s", deptmpfile.c_str());
 
 				return HTTP_INTERNAL_SERVER_ERROR;
 			}
