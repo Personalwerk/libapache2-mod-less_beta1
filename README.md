@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/Opeey/libapache2-mod-less_beta1.svg?branch=master)](https://travis-ci.org/Opeey/libapache2-mod-less_beta1)
+
 # mod_less: automatic less compiling in apache2:
 
 This apache2 module is written to compile less code inside to css files when they are requested, so the process will 
