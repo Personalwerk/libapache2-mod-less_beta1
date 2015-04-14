@@ -166,18 +166,20 @@ static int less_handler(request_rec* r) {
 		//   r->filename=foo.css or foo.less -> basename=foo
 		std::string filename(r->filename);
 
-		std::string basename = filename.substr(0, filename.find_last_of("."));
+		std::string filebasename = filename.substr(0, filename.find_last_of("."));
 
-		std::string cssfile(basename);
-		std::string lessfile(basename);
-		std::string depfile(basename);
-		std::string csstmpfile(basename);
-		std::string deptmpfile(basename);
-		std::string errtmpfile(basename);
+		std::string cssfile(filebasename);
+		std::string lessfile(filebasename);
+		std::string depfile(filebasename);
+		std::string mapfile(filebasename);
+		std::string csstmpfile(filebasename);
+		std::string deptmpfile(filebasename);
+		std::string errtmpfile(filebasename);
 
 		cssfile.append(".css");
 		lessfile.append(".less");
 		depfile.append(".dep");
+		mapfile.append(".map");
 		csstmpfile.append(".css.tmpXXXXXX");
 		deptmpfile.append(".dep.tmpXXXXXX");
 		errtmpfile.append(".err.tmpXXXXXX");
@@ -274,7 +276,8 @@ static int less_handler(request_rec* r) {
 			lessc_flags.append(" --depends");
 		}
 		if (cfg->map_file == 1) {
-			lessc_flags.append(" --source-map")
+			lessc_flags.append(" --source-map=")
+				.append(mapfile)
 				.append(" --source-map-less-inline");
 		}
 		lessc_flags.append(" ");
