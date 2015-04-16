@@ -1,14 +1,16 @@
 language: cpp
 compiler:
-  - gcc
+- gcc
 before_install:
-  - sudo apt-get update -qq
-  - sudo apt-get install -y apache2-prefork-dev
+- sudo apt-get update -qq
+- sudo apt-get install -y apache2-prefork-dev
 script: make clean all
 deploy:
   provider: releases
-  api_key: "d5ba3fc405e54709db494c67c912b2d0dd1331d2"
+  api_key:
+    secure: sdliy7ckcG3LJo4Zjg1Bjavh6sKR646w/FlYrS84RJSaTr7uDWZt7Bh5tZktECxzWwuKkRDCguA1Q7Klx8O/1M6PtqdV+Ffgnen2WlMtmNF0iKFeVn13igNxn6khClGatUXlGNRpEMtbu3BRa4mJOzQ6LT5xB15/UEzQnGOTSW0=
   file: "./src/.libs/mod_less.so"
   skip_cleanup: true
   on:
     tags: true
+    repo: Personalwerk/libapache2-mod-less_beta1
