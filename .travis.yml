@@ -7,7 +7,7 @@ before_install:
 script: make clean all
 deploy:
   provider: releases
-  api_key: "f03257157f8baf204548f2630b7ee8de1a393388"
+  api_key: "d5ba3fc405e54709db494c67c912b2d0dd1331d2"
   file: "./src/.libs/mod_less.so"
   skip_cleanup: true
   on:
