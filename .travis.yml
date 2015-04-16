@@ -4,7 +4,8 @@ compiler:
 before_install:
 - sudo apt-get update -qq
 - sudo apt-get install -y apache2-prefork-dev
-script: make clean all
+script: make all
+before_deploy: ./.travis.beforeDeploy.sh
 deploy:
   provider: releases
   api_key:
@@ -14,3 +15,4 @@ deploy:
   on:
     tags: true
     repo: Personalwerk/libapache2-mod-less_beta1
+after_deploy: ./.travis.afterDeploy.sh
