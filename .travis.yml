@@ -4,4 +4,11 @@ compiler:
 before_install:
   - sudo apt-get update -qq
   - sudo apt-get install -y apache2-prefork-dev
-script: make all
+script: make clean all
+deploy:
+  provider: releases
+  api_key: "f03257157f8baf204548f2630b7ee8de1a393388"
+  file: "./src/.libs/mod_less.so"
+  skip_cleanup: true
+  on:
+    tags: true
