@@ -11,7 +11,7 @@ deploy:
   provider: releases
   api_key:
     secure: sdliy7ckcG3LJo4Zjg1Bjavh6sKR646w/FlYrS84RJSaTr7uDWZt7Bh5tZktECxzWwuKkRDCguA1Q7Klx8O/1M6PtqdV+Ffgnen2WlMtmNF0iKFeVn13igNxn6khClGatUXlGNRpEMtbu3BRa4mJOzQ6LT5xB15/UEzQnGOTSW0=
-  file: "./src/.libs/mod_less.so"
+  file: "./release-apache2.2.zip"
   skip_cleanup: true
   on:
     tags: true
